@@ -12,6 +12,7 @@ get `detect_reef` to be a standalone script that:
 ### detect_reef_position
 checks april tag position for the location of a reef post
   * includes sliders to find the coordinates of interesting features in April Tag space
+![detect_reef_position_screenshot](media/detect_reef_position.png)
 
 ### detect_reef
 currently a rewrite of detect_reef_position
@@ -19,3 +20,4 @@ currently a rewrite of detect_reef_position
   * includes common positions for algae
   * ISSUE: top reef post isn't in the right place because that post is squiggly. The coral sits further up.
   * TODO: simulation with coral game elements
+![detect_reef_screenshot](media/detect_reef.png)
