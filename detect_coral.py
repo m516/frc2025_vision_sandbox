@@ -24,7 +24,39 @@ def grayscale_8bit(image):
     elif image.dtype == np.float32 or image.dtype == np.float64:
         image = (image * 255).clip(0, 255).astype(np.uint8)  # Normalize floating point white (1.0) to 8-bit (255)
     return image
-# end grayscale_8bit
+# end function grayscale_8bit
+
+def max_pixel_in_radius(image, point, r):
+    """
+    Returns the maximum value within a radius `r` around the given `point = (y, x)`.
+    """
+    y, x = point
+    y_min = max(0, y - r)
+    y_max = min(image.shape[0], y + r + 1)
+    x_min = max(0, x - r)
+    x_max = min(image.shape[1], x + r + 1)
+    region = image[y_min:y_max, x_min:x_max]
+    if len(region) == 0:
+        return 0
+    return np.max(region)
+# end function max_pixel_in_radius
+
+
+def evaluate_reefpostness(image):
+    image = image.astype(np.float32) / 255.0
+    blurred = cv2.boxFilter(image, ddepth=-1, ksize=(654, 65))
+    eps = 1e-8
+    image = cv2.divide(image, blurred + eps)
+    # mean_vals = image.mean(axis=(0, 1))
+    # mean_vals = mean_vals.reshape(1, 1, -1)
+    # a = image / mean_vals
+    a = image
+    r = a[..., 2]
+    g = a[..., 1]
+    b = a[..., 0]
+    a = (r + b - 2*g) - np.abs(r - b)
+    return a
+# end function evaluate_reefpostness
 
 class EventProcessor():
     '''
@@ -106,8 +138,13 @@ class Camera(EventProcessor):
         expect_property("time", event)
         time = event["time"]
         image = cv2.imread(os.path.join(self.sequence_path, self.image_files[time]))
+        image_reefpost = evaluate_reefpostness(image)
+        image_debug = image.astype(np.float32) * np.expand_dims(image_reefpost * 3, axis=2)
+        image_debug = np.clip(image_debug, 0, 255).astype(np.uint8)
         processed_event = self.global_properties | {
-            "camera_image": image
+            "camera_image": image,
+            "reefpost_image": evaluate_reefpostness(image),
+            "debug_image": image_debug
         }
         self.propagate(event, processed_event)
     # end method method process
@@ -246,6 +283,7 @@ class ReefDetector(EventProcessor):
         self.algae_positions_relative_to_apriltag = list(itertools.product(ax,ay,az))
     # end method __init__
 
+
     def process(self, event: dict):
         # the time of the simulation: an integer from 0 to the number of images in "renders/"
         expect_property("apriltag_id", event)
@@ -267,21 +305,23 @@ class ReefDetector(EventProcessor):
 
         # When done processing the event, draw the positions on the screen for debugging
         for c in self.most_recent_event["reef_detector_temporary_position"]:
+            quality = max_pixel_in_radius(r.most_recent_event["reefpost_image"], c, 8)*3
+            quality = int(quality*255)
             cv2.circle(
-                      img = r.most_recent_event["camera_image"],
+                      img = r.most_recent_event["debug_image"],
                    center = c,
                    radius = 8,
-                    color = (0,0,255), # red
+                    color = (0,quality,255-quality), # red
                 thickness = -1     # fill in
             )
-        for c in self.most_recent_event["algae_detector_temporary_position"]:
-            cv2.circle(
-                    img = r.most_recent_event["camera_image"],
-                 center = c,
-                 radius = 8,
-                  color = (255,255,0), # red
-              thickness = -1     # fill in
-            )
+        # for c in self.most_recent_event["algae_detector_temporary_position"]:
+        #     cv2.circle(
+        #             img = r.most_recent_event["debug_image"],
+        #          center = c,
+        #          radius = 8,
+        #           color = (255,255,0), # red
+        #       thickness = -1     # fill in
+        #     )
     # end method process
 # end class ReefDetector
 
@@ -320,9 +360,10 @@ def update_time(val):
     global r
     global event
     event["time"] = val
-    c.process(event)  # Reprocess event with new time
-    img = r.most_recent_event["camera_image"].copy()  # Get updated image
-    cv2.imshow("image", img)  # Show updated image
+    c.process(event)
+    display_image = r.most_recent_event["debug_image"]
+    cv2.imshow("image", display_image)  # Show updated image
+    
 
 # Create OpenCV window
 cv2.namedWindow("image")
